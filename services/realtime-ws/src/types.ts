@@ -10,6 +10,6 @@ export interface WebSocketMessage {
 }
 
 export interface WebSocketResponse {
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'chunk';
   payload: any;
 }

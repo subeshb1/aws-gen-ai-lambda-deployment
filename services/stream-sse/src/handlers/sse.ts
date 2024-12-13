@@ -1,102 +1,112 @@
-import { SSEEvent, SSEResult, SSERequest, formatSSEMessage } from '../types';
+import { SSEEvent, SSERequest, formatSSEMessage } from '../types';
 import { getGenAIService } from '../../../shared/genai/service';
 import { GenAIError } from '../../../shared/genai/types';
+import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
+
+declare const awslambda: {
+  streamifyResponse(
+    handler: (event: any, responseStream: any, context: any) => Promise<void>
+  ): (event: any, context: any) => Promise<void>;
+  HttpResponseStream: any;
+};
 
 // Initialize GenAI service
 const genAIService = getGenAIService(process.env.OPENAI_API_KEY || '');
 
-// CORS headers for SSE
-const headers = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
-  Connection: 'keep-alive',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-export const handler = async (event: SSEEvent): Promise<SSEResult> => {
-  // Handle OPTIONS request for CORS
-  if (event.requestContext.http.method === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: '',
-    };
-  }
-
-  try {
-    // Parse request body
-    const request: SSERequest = event.body ? JSON.parse(event.body) : {};
-
-    if (!request.prompt) {
-      throw new Error('Prompt is required');
-    }
-
-    // Generate response
-    const response = await genAIService.generateResponse(request);
-
-    // Format as SSE message
-    const message = formatSSEMessage({
-      id: event.requestContext.requestId,
-      event: 'message',
-      data: JSON.stringify(response),
-    });
-
-    // If streaming is requested, simulate chunks
-    if (request.stream) {
-      const words = response.text.split(' ');
-      let streamResponse = '';
-
-      // Simulate streaming by sending words in chunks
-      for (let i = 0; i < words.length; i++) {
-        const chunk = formatSSEMessage({
-          id: `${event.requestContext.requestId}-${i}`,
-          event: 'chunk',
-          data: JSON.stringify({ text: words[i] + ' ' }),
+// Create a readable stream from async generator
+function createReadableFromGenerator(generator: AsyncGenerator<string>) {
+  return new Readable({
+    async read() {
+      try {
+        const { value, done } = await generator.next();
+        if (done) {
+          this.push(null);
+        } else {
+          const message = formatSSEMessage({
+            id: Date.now().toString(),
+            event: 'chunk',
+            data: JSON.stringify({ text: value }),
+          });
+          this.push(message);
+        }
+      } catch (error) {
+        const errorMessage = formatSSEMessage({
+          id: Date.now().toString(),
+          event: 'error',
+          data: JSON.stringify({
+            error: {
+              message: 'Stream processing error',
+              code: 'STREAM_ERROR',
+              statusCode: 500,
+            },
+          }),
         });
-        streamResponse += chunk;
+        this.push(errorMessage);
+        this.push(null);
+      }
+    },
+  });
+}
+
+export const handler = awslambda.streamifyResponse(
+  async (event: SSEEvent, responseStream, _context) => {
+    const httpResponseMetadata = {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+      },
+    };
+    responseStream = awslambda.HttpResponseStream.from(
+      responseStream,
+      httpResponseMetadata
+    );
+
+    try {
+
+      // Parse request body
+      const request: SSERequest = event.body
+        ? JSON.parse(event.body)
+        : { prompt: 'hi' };
+
+      if (!request.prompt) {
+        throw new Error('Prompt is required');
       }
 
-      // Send completion message
-      streamResponse += formatSSEMessage({
-        id: `${event.requestContext.requestId}-complete`,
-        event: 'complete',
-        data: JSON.stringify({ usage: response.usage }),
+      // Create readable stream from generator
+      const generator = genAIService.streamResponse(request);
+      const readableStream = createReadableFromGenerator(generator);
+
+      // Add completion message at the end
+      readableStream.on('end', () => {
+        const completionMessage = formatSSEMessage({
+          id: Date.now().toString(),
+          event: 'complete',
+          data: JSON.stringify({ status: 'done' }),
+        });
+        responseStream.write(completionMessage);
+        responseStream.end();
       });
 
-      return {
-        statusCode: 200,
-        headers,
-        body: streamResponse,
-      };
+      // Use pipeline to handle streaming
+      await pipeline(readableStream, responseStream);
+    } catch (error) {
+      console.error('Error:', error);
+
+      const errorMessage = formatSSEMessage({
+        id: Date.now().toString(),
+        event: 'error',
+        data: JSON.stringify({
+          error: {
+            message: 'Internal server error',
+            code: 'INTERNAL_ERROR',
+            statusCode: 500,
+          },
+        }),
+      });
+
+      responseStream.write(errorMessage);
+      responseStream.end();
     }
-
-    // Non-streaming response
-    return {
-      statusCode: 200,
-      headers,
-      body: message,
-    };
-  } catch (error) {
-    console.error('Error:', error);
-
-    const errorMessage = formatSSEMessage({
-      id: event.requestContext.requestId,
-      event: 'error',
-      data: JSON.stringify({
-        error: {
-          message: 'Internal server error',
-          code: 'INTERNAL_ERROR',
-          statusCode: 500,
-        },
-      }),
-    });
-
-    return {
-      statusCode: 200, // Keep 200 for SSE even on error
-      headers,
-      body: errorMessage,
-    };
   }
-};
+);

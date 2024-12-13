@@ -6,6 +6,10 @@ import {
 } from '../types';
 import { getGenAIService } from '../../../shared/genai/service';
 import { GenAIError } from '../../../shared/genai/types';
+import {
+  ApiGatewayManagementApiClient,
+  PostToConnectionCommand,
+} from '@aws-sdk/client-apigatewaymanagementapi';
 
 // Initialize GenAI service
 const genAIService = getGenAIService(process.env.OPENAI_API_KEY || '');
@@ -17,11 +21,26 @@ const sendResponse = async (
   connectionId: string,
   response: WebSocketResponse
 ): Promise<void> => {
-  const endpoint = `https://${domainName}/${stage}/@connections/${connectionId}`;
+  const endpoint = `https://${domainName}/${stage}`;
+  const client = new ApiGatewayManagementApiClient({
+    endpoint,
+    region: process.env.AWS_REGION || 'ap-southeast-2',
+  });
 
-  // TODO: Implement actual posting to the WebSocket connection
-  console.log('Would send to endpoint:', endpoint);
-  console.log('Response:', JSON.stringify(response));
+  try {
+    const command = new PostToConnectionCommand({
+      ConnectionId: connectionId,
+      Data: Buffer.from(JSON.stringify(response)),
+    });
+
+    await client.send(command);
+  } catch (error) {
+    console.error('Error sending message to WebSocket client:', error);
+    if ((error as any).statusCode === 410) {
+      console.log('Connection stale, client disconnected');
+    }
+    throw error;
+  }
 };
 
 export const handleConnect = async (
@@ -61,13 +80,30 @@ export const handleDefault = async (
       throw new Error('Invalid action');
     }
 
-    // Generate AI response
-    const aiResponse = await genAIService.generateResponse(message.payload);
+    // Start streaming response
+    const generator = genAIService.streamResponse(message.payload);
+    let fullText = '';
 
-    // Send response back to the client
+    // Stream each chunk to the client
+    for await (const chunk of generator) {
+      fullText += chunk;
+      await sendResponse(domainName, stage, connectionId, {
+        type: 'chunk',
+        payload: { text: chunk },
+      });
+    }
+
+    // Send final response
     await sendResponse(domainName, stage, connectionId, {
       type: 'success',
-      payload: aiResponse,
+      payload: {
+        text: fullText.trim(),
+        usage: {
+          promptTokens: message.payload.prompt.length,
+          completionTokens: fullText.length,
+          totalTokens: message.payload.prompt.length + fullText.length,
+        },
+      },
     });
 
     return {
@@ -75,6 +111,7 @@ export const handleDefault = async (
       body: 'Message processed',
     };
   } catch (error) {
+    console.error('Error processing message:', error);
     const errorResponse: WebSocketResponse = {
       type: 'error',
       payload: {
@@ -84,7 +121,11 @@ export const handleDefault = async (
       },
     };
 
-    await sendResponse(domainName, stage, connectionId, errorResponse);
+    try {
+      await sendResponse(domainName, stage, connectionId, errorResponse);
+    } catch (sendError) {
+      console.error('Error sending error response:', sendError);
+    }
 
     return {
       statusCode: 500,

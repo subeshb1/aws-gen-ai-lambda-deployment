@@ -26,6 +26,7 @@ export class SyncApiStack extends cdk.Stack {
     const apiHandler = new nodejs.NodejsFunction(this, 'APIHandler', {
       runtime: lambda.Runtime.NODEJS_LATEST,
       architecture: lambda.Architecture.ARM_64,
+      timeout: cdk.Duration.seconds(30),
       entry: path.join(__dirname, '../src/handlers/api.ts'),
       handler: 'handler',
       environment: {

@@ -7,23 +7,70 @@ export class GenAIService {
     this.apiKey = apiKey;
   }
 
-  async generateResponse(request: GenAIRequest): Promise<GenAIResponse> {
+  // Generator function for streaming responses
+  async *streamResponse(request: GenAIRequest): AsyncGenerator<string, GenAIResponse, unknown> {
     try {
-      // TODO: Replace with actual API implementation
-      // This is a mock implementation for now
-      const mockResponse: GenAIResponse = {
-        text: `Mock response for prompt: ${request.prompt}`,
+      // Mock response broken into chunks
+      const mockWords = [
+        "I'm", "a", "mock", "AI", "response,", 
+        "simulating", "streaming", "for", "your", "prompt:", 
+        request.prompt, "...", "This", "is", "just", 
+        "a", "test", "implementation", "that", "will", 
+        "be", "replaced", "with", "actual", "LLM", 
+        "integration", "later."
+      ];
+
+      let totalText = '';
+      const startTime = Date.now();
+
+      // Simulate streaming word by word
+      for (const word of mockWords) {
+        // Add random delay between 100-300ms
+        await new Promise(resolve => 
+          setTimeout(resolve, Math.random() * 200 + 100)
+        );
+
+        totalText += word + ' ';
+        yield word + ' ';
+      }
+
+      // Return final response with metadata
+      return {
+        text: totalText.trim(),
         usage: {
           promptTokens: request.prompt.length,
-          completionTokens: 50,
-          totalTokens: request.prompt.length + 50,
+          completionTokens: totalText.length,
+          totalTokens: request.prompt.length + totalText.length,
         },
       };
+    } catch (error) {
+      const apiError: GenAIError = {
+        message: (error as Error).message || 'Failed to generate AI response',
+        code: 'GENAI_ERROR',
+        statusCode: 500,
+      };
+      throw apiError;
+    }
+  }
 
-      // Simulate API latency
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Non-streaming response (for backward compatibility)
+  async generateResponse(request: GenAIRequest): Promise<GenAIResponse> {
+    try {
+      let fullText = '';
+      
+      // Use the generator to accumulate the full response
+      for await (const chunk of this.streamResponse(request)) {
+        fullText += chunk;
+      }
 
-      return mockResponse;
+      return {
+        text: fullText.trim(),
+        usage: {
+          promptTokens: request.prompt.length,
+          completionTokens: fullText.length,
+          totalTokens: request.prompt.length + fullText.length,
+        },
+      };
     } catch (error) {
       const apiError: GenAIError = {
         message: (error as Error).message || 'Failed to generate AI response',

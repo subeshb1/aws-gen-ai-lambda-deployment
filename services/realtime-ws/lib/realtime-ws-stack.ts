@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
-import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -38,6 +38,7 @@ export class RealtimeWsStack extends cdk.Stack {
         OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'dummy-key',
         NODE_OPTIONS: '--enable-source-maps',
       },
+      timeout: cdk.Duration.seconds(30),
       logRetention: logs.RetentionDays.ONE_WEEK,
       bundling: {
         minify: true,
@@ -55,11 +56,32 @@ export class RealtimeWsStack extends cdk.Stack {
       },
     };
 
+    // Create IAM role for Lambda functions
+    const lambdaRole = new iam.Role(this, 'WebSocketLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          'service-role/AWSLambdaBasicExecutionRole'
+        ),
+      ],
+    });
+
+    // Add WebSocket management permissions
+    lambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['execute-api:ManageConnections'],
+        resources: [
+          `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*`,
+        ],
+      })
+    );
+
     // Connect handler
     const connectHandler = new nodejs.NodejsFunction(this, 'ConnectHandler', {
       ...lambdaConfig,
       entry: path.join(__dirname, '../src/handlers/websocket.ts'),
       handler: 'handleConnect',
+      role: lambdaRole,
     });
 
     // Disconnect handler
@@ -70,6 +92,7 @@ export class RealtimeWsStack extends cdk.Stack {
         ...lambdaConfig,
         entry: path.join(__dirname, '../src/handlers/websocket.ts'),
         handler: 'handleDisconnect',
+        role: lambdaRole,
       }
     );
 
@@ -78,87 +101,98 @@ export class RealtimeWsStack extends cdk.Stack {
       ...lambdaConfig,
       entry: path.join(__dirname, '../src/handlers/websocket.ts'),
       handler: 'handleDefault',
+      role: lambdaRole,
     });
 
-    // Create routes
-    const connectRoute = new apigatewayv2.CfnRoute(this, 'ConnectRoute', {
+    // Create WebSocket API integrations
+    const connectIntegration = new apigatewayv2.CfnIntegration(
+      this,
+      'ConnectIntegration',
+      {
+        apiId: webSocketApi.ref,
+        integrationType: 'AWS_PROXY',
+        integrationUri: `arn:aws:apigateway:${this.region}:lambda:path/2015-03-31/functions/${connectHandler.functionArn}/invocations`,
+      }
+    );
+
+    const disconnectIntegration = new apigatewayv2.CfnIntegration(
+      this,
+      'DisconnectIntegration',
+      {
+        apiId: webSocketApi.ref,
+        integrationType: 'AWS_PROXY',
+        integrationUri: `arn:aws:apigateway:${this.region}:lambda:path/2015-03-31/functions/${disconnectHandler.functionArn}/invocations`,
+      }
+    );
+
+    const defaultIntegration = new apigatewayv2.CfnIntegration(
+      this,
+      'DefaultIntegration',
+      {
+        apiId: webSocketApi.ref,
+        integrationType: 'AWS_PROXY',
+        integrationUri: `arn:aws:apigateway:${this.region}:lambda:path/2015-03-31/functions/${defaultHandler.functionArn}/invocations`,
+      }
+    );
+
+    // Create WebSocket API routes
+    new apigatewayv2.CfnRoute(this, 'ConnectRoute', {
       apiId: webSocketApi.ref,
       routeKey: '$connect',
       authorizationType: 'NONE',
-      target: `integrations/${
-        new apigatewayv2.CfnIntegration(this, 'ConnectIntegration', {
-          apiId: webSocketApi.ref,
-          integrationType: 'AWS_PROXY',
-          integrationUri: connectHandler.functionArn,
-        }).ref
-      }`,
+      target: `integrations/${connectIntegration.ref}`,
     });
 
-    const disconnectRoute = new apigatewayv2.CfnRoute(this, 'DisconnectRoute', {
+    new apigatewayv2.CfnRoute(this, 'DisconnectRoute', {
       apiId: webSocketApi.ref,
       routeKey: '$disconnect',
       authorizationType: 'NONE',
-      target: `integrations/${
-        new apigatewayv2.CfnIntegration(this, 'DisconnectIntegration', {
-          apiId: webSocketApi.ref,
-          integrationType: 'AWS_PROXY',
-          integrationUri: disconnectHandler.functionArn,
-        }).ref
-      }`,
+      target: `integrations/${disconnectIntegration.ref}`,
     });
 
-    const defaultRoute = new apigatewayv2.CfnRoute(this, 'DefaultRoute', {
+    new apigatewayv2.CfnRoute(this, 'DefaultRoute', {
       apiId: webSocketApi.ref,
       routeKey: '$default',
       authorizationType: 'NONE',
-      target: `integrations/${
-        new apigatewayv2.CfnIntegration(this, 'DefaultIntegration', {
-          apiId: webSocketApi.ref,
-          integrationType: 'AWS_PROXY',
-          integrationUri: defaultHandler.functionArn,
-        }).ref
-      }`,
+      target: `integrations/${defaultIntegration.ref}`,
     });
 
     // Create stage
-    const stage = new apigatewayv2.CfnStage(this, 'ProdStage', {
+    const stage = new apigatewayv2.CfnStage(this, 'ProductionStage', {
       apiId: webSocketApi.ref,
       stageName: 'ws',
       autoDeploy: true,
     });
 
-    // Store just the API Gateway domain in SSM
-    const apiDomain = `${webSocketApi.ref}.execute-api.${this.region}.amazonaws.com`;
-    
+    // Grant Lambda permissions to API Gateway
+    connectHandler.addPermission('APIGWPermission', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*/*`,
+    });
+
+    disconnectHandler.addPermission('APIGWPermission', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*/*`,
+    });
+
+    defaultHandler.addPermission('APIGWPermission', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*/*`,
+    });
+
+    // Store WebSocket endpoint in SSM
+    const wsEndpoint = `${webSocketApi.ref}.execute-api.${this.region}.amazonaws.com/${stage.stageName}`;
     new ssm.StringParameter(this, 'WebSocketEndpoint', {
       parameterName: '/genai/websocket/endpoint',
-      stringValue: apiDomain,
-      description: 'WebSocket API Gateway domain',
+      stringValue: wsEndpoint,
+      description: 'WebSocket API endpoint',
       tier: ssm.ParameterTier.STANDARD,
     });
 
-    // Output domain, stage URL, and full WebSocket URL
-    new cdk.CfnOutput(this, 'WebSocketDomain', {
-      value: apiDomain,
-      description: 'WebSocket API Gateway domain',
-    });
-
-    new cdk.CfnOutput(this, 'WebSocketStageURL', {
-      value: `${apiDomain}/${stage.stageName}`,
-      description: 'WebSocket API Stage URL',
-    });
-
+    // Output the WebSocket URL
     new cdk.CfnOutput(this, 'WebSocketURL', {
-      value: `wss://${apiDomain}/${stage.stageName}`,
-      description: 'WebSocket API Full URL',
-    });
-
-    // Grant permissions to invoke Lambda functions
-    [connectHandler, disconnectHandler, defaultHandler].forEach((handler) => {
-      handler.addPermission(`${handler.node.id}Permission`, {
-        principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
-        sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*`,
-      });
+      value: `wss://${wsEndpoint}`,
+      description: 'WebSocket API URL',
     });
   }
 }
