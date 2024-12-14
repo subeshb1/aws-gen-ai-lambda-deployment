@@ -1,7 +1,21 @@
-import { GenAIRequest, StreamCallbacks, APIResponse } from '../types/api';
+import { GenAIRequest, StreamCallbacks, APIResponse, StreamMetrics } from '../types/api';
 
 export class RestClient {
   constructor(private readonly endpoint: string) {}
+
+  private calculateMetrics(text: string, startTime: number): StreamMetrics {
+    const now = Date.now();
+    const totalDuration = now - startTime;
+    
+    // For REST API, we only get one chunk
+    return {
+      firstChunkLatency: totalDuration,
+      totalDuration,
+      chunkCount: 1,
+      avgChunkLatency: totalDuration,
+      totalTokens: Math.round(text.split(/\s+/).length * 1.3)
+    };
+  }
 
   async generate(request: GenAIRequest, callbacks?: StreamCallbacks): Promise<APIResponse> {
     const startTime = Date.now();
@@ -21,13 +35,16 @@ export class RestClient {
       }
 
       const data = await response.json();
-      callbacks?.onChunk?.(data.data.text);
+      const text = data.data.text;
+      
+      const metrics = this.calculateMetrics(text, startTime);
+      callbacks?.onChunk?.(text, metrics);
       callbacks?.onComplete?.();
 
       return {
         source: 'rest',
-        text: data.data.text,
-        latency: Date.now() - startTime,
+        text: text.trim(),
+        metrics
       };
     } catch (error) {
       callbacks?.onError?.(error as Error);

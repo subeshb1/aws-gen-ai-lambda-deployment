@@ -1,7 +1,12 @@
 import { WebSocketClient } from './websocket';
 import { SSEClient } from './sse';
 import { RestClient } from './rest';
-import { GenAIRequest, StreamCallbacks, APIResponse, APIEndpoints } from '../types/api';
+import {
+  GenAIRequest,
+  StreamCallbacks,
+  APIResponse,
+  APIEndpoints,
+} from '../types/api';
 
 export class GenAIClient {
   private wsClient: WebSocketClient;
@@ -11,11 +16,16 @@ export class GenAIClient {
 
   constructor(endpoints: APIEndpoints) {
     this.cloudfrontDomain = endpoints.cloudfront;
-    
+
     // Initialize clients with CloudFront paths
     this.wsClient = new WebSocketClient(`${this.cloudfrontDomain}/ws`);
     this.sseClient = new SSEClient(`${this.cloudfrontDomain}/sse`);
     this.restClient = new RestClient(`${this.cloudfrontDomain}/api`);
+  }
+
+  // Get WebSocket client for early connection
+  getWebSocketClient(): WebSocketClient {
+    return this.wsClient;
   }
 
   async generateAll(
@@ -24,19 +34,22 @@ export class GenAIClient {
   ): Promise<APIResponse[]> {
     const results = await Promise.allSettled([
       this.wsClient.generate(request, {
-        onChunk: (text) => callbacks?.onChunk?.(`[WebSocket] ${text}`),
+        onChunk: (text, metrics) =>
+          callbacks?.onChunk?.(`[WebSocket] ${text}`, metrics),
         onError: callbacks?.onError,
-        onComplete: callbacks?.onComplete,
+        onComplete: () => callbacks?.onComplete?.('WebSocket'),
       }),
       this.sseClient.generate(request, {
-        onChunk: (text) => callbacks?.onChunk?.(`[SSE] ${text}`),
+        onChunk: (text, metrics) =>
+          callbacks?.onChunk?.(`[SSE] ${text}`, metrics),
         onError: callbacks?.onError,
-        onComplete: callbacks?.onComplete,
+        onComplete: () => callbacks?.onComplete?.('SSE'),
       }),
       this.restClient.generate(request, {
-        onChunk: (text) => callbacks?.onChunk?.(`[REST] ${text}`),
+        onChunk: (text, metrics) =>
+          callbacks?.onChunk?.(`[REST] ${text}`, metrics),
         onError: callbacks?.onError,
-        onComplete: callbacks?.onComplete,
+        onComplete: () => callbacks?.onComplete?.('REST'),
       }),
     ]);
 
@@ -71,4 +84,4 @@ export function getEndpoints(): APIEndpoints {
     rest: `${cloudfront}/api`,
     cloudfront,
   };
-} 
+}

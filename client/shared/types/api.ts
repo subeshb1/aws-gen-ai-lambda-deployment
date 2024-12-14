@@ -1,28 +1,18 @@
 export interface GenAIRequest {
   prompt: string;
-  maxTokens?: number;
-  temperature?: number;
 }
 
-export interface GenAIResponse {
-  text: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+export interface StreamMetrics {
+  firstChunkLatency: number;
+  totalDuration: number;
+  chunkCount: number;
+  avgChunkLatency: number;
+  totalTokens: number;
 }
 
-export interface APIEndpoints {
-  websocket: string;
-  sse: string;
-  rest: string;
-  cloudfront: string;
-}
-
-export type StreamCallback = (text: string) => void;
+export type StreamCallback = (text: string, metrics?: StreamMetrics) => void;
 export type ErrorCallback = (error: Error) => void;
-export type CompleteCallback = () => void;
+export type CompleteCallback = (source?: string) => void;
 
 export interface StreamCallbacks {
   onChunk?: StreamCallback;
@@ -31,7 +21,14 @@ export interface StreamCallbacks {
 }
 
 export interface APIResponse {
-  source: 'websocket' | 'sse' | 'rest';
+  source: 'WebSocket' | 'SSE' | 'rest';
   text: string;
-  latency: number;
+  metrics: StreamMetrics;
+}
+
+export interface APIEndpoints {
+  websocket: string;
+  sse: string;
+  rest: string;
+  cloudfront: string;
 } 

@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GenAIClient, getEndpoints } from '../../../shared/api-clients';
+import { StreamMetrics } from '../../../shared/types/api';
 
-interface ResponseMetrics {
+interface ResponseState {
   text: string;
-  firstChunkLatency?: number;
-  totalDuration?: number;
-  chunkCount?: number;
-  avgChunkLatency?: number;
-  totalTokens?: number;
+  metrics?: StreamMetrics;
+  isComplete?: boolean;
 }
 
 const formatDuration = (ms?: number): string => {
@@ -16,55 +14,133 @@ const formatDuration = (ms?: number): string => {
   return `${(ms / 1000).toFixed(2)}s`;
 };
 
+const PLACEHOLDER_METRICS: StreamMetrics = {
+  firstChunkLatency: 0,
+  totalDuration: 0,
+  chunkCount: 0,
+  avgChunkLatency: 0,
+  totalTokens: 0,
+};
+
 const MetricItem = ({
   label,
   value,
+  isWinner,
+  isPlaceholder = false,
 }: {
   label: string;
   value: string | number;
+  isWinner?: boolean;
+  isPlaceholder?: boolean;
 }) => (
-  <div className="flex flex-col items-center bg-white rounded-lg p-2 shadow-sm">
-    <span className="text-xs text-gray-500 mb-1">{label}</span>
-    <span className="font-mono font-medium text-gray-800">{value}</span>
+  <div
+    className={`flex flex-col items-center px-2 py-1 rounded-lg relative min-w-[70px]
+    ${isWinner ? 'bg-green-50 ring-1 ring-green-400' : 'bg-white'} 
+    ${isPlaceholder ? 'opacity-50' : ''} transition-all duration-200 hover:scale-105`}
+  >
+    {isWinner && !isPlaceholder && (
+      <div className="absolute -top-1.5 -right-1.5 bg-green-400 text-white rounded-full p-0.5 w-4 h-4 flex items-center justify-center text-[10px] shadow-lg transform hover:scale-110 transition-transform">
+        🏆
+      </div>
+    )}
+    <span className="text-[10px] text-gray-500 mb-0.5">{label}</span>
+    <span
+      className={`font-mono text-xs font-medium ${
+        isWinner && !isPlaceholder ? 'text-green-600' : 'text-gray-800'
+      }`}
+    >
+      {isPlaceholder ? '-' : value}
+    </span>
   </div>
 );
 
-const MetricsDisplay = ({ metrics }: { metrics: ResponseMetrics }) => (
-  <div className="flex gap-2 mb-3 p-2 bg-gray-50 rounded-lg text-sm">
-    <div className="flex-1 flex gap-2">
-      <MetricItem
-        label="First Chunk"
-        value={formatDuration(metrics.firstChunkLatency)}
-      />
-      <MetricItem
-        label="Total Time"
-        value={formatDuration(metrics.totalDuration)}
-      />
-      <MetricItem
-        label="Avg Latency"
-        value={formatDuration(metrics.avgChunkLatency)}
-      />
+interface MetricsDisplayProps {
+  metrics?: StreamMetrics;
+  allMetrics: { [key: string]: ResponseState };
+  source: string;
+}
+
+const MetricsDisplay = ({
+  metrics,
+  allMetrics,
+  source,
+}: MetricsDisplayProps) => {
+  const currentMetrics = metrics || PLACEHOLDER_METRICS;
+  const isPlaceholder = !metrics;
+  const isComplete = allMetrics[source]?.isComplete;
+
+  // Find winners for each latency metric
+  const findWinner = (metricKey: keyof StreamMetrics): string[] => {
+    const validMetrics = Object.entries(allMetrics)
+      .filter(([_, r]) => {
+        // Basic validation for all metrics
+        const hasValidMetric =
+          r?.metrics?.[metricKey] !== undefined && r.metrics[metricKey] > 0;
+
+        // For total duration, also require completion
+        if (metricKey === 'totalDuration') {
+          return hasValidMetric && r.isComplete;
+        }
+
+        return hasValidMetric;
+      })
+      .map(([src, r]) => ({ source: src, value: r.metrics![metricKey] }));
+
+    if (validMetrics.length === 0) return [];
+
+    const bestValue = Math.min(...validMetrics.map((m) => m.value));
+    return validMetrics
+      .filter((m) => m.value === bestValue)
+      .map((m) => m.source);
+  };
+
+  const firstChunkWinners = findWinner('firstChunkLatency');
+  const totalDurationWinners = findWinner('totalDuration');
+  const avgLatencyWinners = findWinner('avgChunkLatency');
+
+  return (
+    <div className="mb-2 p-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-lg text-sm border border-blue-100/50 backdrop-blur-sm">
+      <div className="flex gap-1 items-center justify-between flex-wrap">
+        <MetricItem
+          label="First Chunk"
+          value={formatDuration(currentMetrics.firstChunkLatency)}
+          isWinner={firstChunkWinners.includes(source)}
+          isPlaceholder={isPlaceholder}
+        />
+        <MetricItem
+          label="Total Time"
+          value={formatDuration(currentMetrics.totalDuration)}
+          isWinner={isComplete && totalDurationWinners.includes(source)}
+          isPlaceholder={isPlaceholder}
+        />
+        <MetricItem
+          label="Avg Latency"
+          value={formatDuration(currentMetrics.avgChunkLatency)}
+          isWinner={avgLatencyWinners.includes(source)}
+          isPlaceholder={isPlaceholder}
+        />
+        <MetricItem
+          label="Chunks"
+          value={currentMetrics.chunkCount.toLocaleString()}
+          isPlaceholder={isPlaceholder}
+        />
+        <MetricItem
+          label="Tokens"
+          value={currentMetrics.totalTokens.toLocaleString()}
+          isPlaceholder={isPlaceholder}
+        />
+      </div>
     </div>
-    <div className="flex gap-2 border-l pl-2">
-      <MetricItem
-        label="Chunks"
-        value={metrics.chunkCount?.toLocaleString() || '0'}
-      />
-      <MetricItem
-        label="Tokens"
-        value={metrics.totalTokens?.toLocaleString() || '0'}
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 export function GenAIChat() {
   const [input, setInput] = useState('');
   const [responses, setResponses] = useState<{
-    [key: string]: ResponseMetrics;
+    [key: string]: ResponseState;
   }>({
-    websocket: { text: '' },
-    sse: { text: '' },
+    WebSocket: { text: '' },
+    SSE: { text: '' },
     rest: { text: '' },
   });
   const [loading, setLoading] = useState(false);
@@ -72,13 +148,23 @@ export function GenAIChat() {
   const clientRef = useRef<GenAIClient | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const startTimes = useRef<{ [key: string]: number }>({});
-  const chunkTimes = useRef<{ [key: string]: number[] }>({});
+  // Get all metrics for comparison
+  const allMetrics = Object.fromEntries(
+    Object.entries(responses).map(([key, response]) => [key, response.metrics])
+  );
 
+  // Initialize clients and establish WebSocket connection on mount
   useEffect(() => {
     try {
       const endpoints = getEndpoints();
       clientRef.current = new GenAIClient(endpoints);
+
+      // Pre-establish WebSocket connection
+      const wsClient = clientRef.current.getWebSocketClient();
+      wsClient.connect().catch((error) => {
+        console.warn('Initial WebSocket connection failed:', error);
+        // Don't set error state here as it's just the initial connection
+      });
     } catch (error) {
       setError('Failed to initialize API clients');
       console.error('Initialization error:', error);
@@ -96,106 +182,87 @@ export function GenAIChat() {
     setLoading(true);
     setError(null);
 
-    const requestStartTime = Date.now();
-
+    // Reset responses
     setResponses({
-      websocket: { text: '', firstChunkLatency: undefined },
-      sse: { text: '', firstChunkLatency: undefined },
-      rest: {
-        text: '',
-        firstChunkLatency: 0, // For sync API, first chunk is same as total time
-        totalDuration: 0,
-        chunkCount: 0,
-      },
+      WebSocket: { text: '' },
+      SSE: { text: '' },
+      rest: { text: '' },
     });
 
-    // Reset metrics
-    startTimes.current = {
-      websocket: requestStartTime,
-      sse: requestStartTime,
-      rest: requestStartTime,
-    };
-    chunkTimes.current = {};
-
     try {
-      await clientRef.current.generateAll(
+      // Track completion status for each client
+      const completionStatus: Record<'WebSocket' | 'SSE' | 'rest', boolean> = {
+        WebSocket: false,
+        SSE: false,
+        rest: false,
+      };
+
+      const results = await clientRef.current.generateAll(
         { prompt: input },
         {
-          onChunk: (text) => {
+          onChunk: (text: string, metrics?: StreamMetrics) => {
             const match = text.match(/^\[(.*?)\]\s(.*)$/);
             if (match) {
               const [, source, content] = match;
-              const key = source.toLowerCase();
-              const now = Date.now();
+              const key = source === 'WebSocket' || source === 'SSE' ? source : 'rest';
 
-              // Track chunk arrival time
-              if (!chunkTimes.current[key]) {
-                chunkTimes.current[key] = [];
-              }
-              chunkTimes.current[key].push(now);
-
-              setResponses((prev) => {
-                const totalDuration = now - startTimes.current[key];
-                const chunkCount = chunkTimes.current[key].length;
-
-                // Calculate average chunk latency
-                const avgChunkLatency =
-                  chunkCount > 1
-                    ? totalDuration / (chunkCount - 1)
-                    : totalDuration;
-
-                // Rough token count (simple word count * 1.3)
-                const totalTokens = Math.round(
-                  (prev[key].text + content).split(/\s+/).length * 1.3
-                );
-
-                return {
+              // Don't update metrics if the client has completed
+              if (!completionStatus[key]) {
+                setResponses((prev) => ({
                   ...prev,
                   [key]: {
+                    ...prev[key],
                     text: prev[key].text + content,
-                    // Only set firstChunkLatency if it hasn't been set yet
-                    firstChunkLatency:
-                      prev[key].firstChunkLatency ??
-                      chunkTimes.current[key][0] - startTimes.current[key],
-                    totalDuration,
-                    chunkCount,
-                    avgChunkLatency,
-                    totalTokens,
+                    ...(metrics && { metrics }),
                   },
-                };
-              });
+                }));
+              }
             }
           },
-          onError: (error) => {
+          onError: (error: Error) => {
             setError(error.message);
             setLoading(false);
           },
-          onComplete: () => {
-            // Update final metrics for sync API
-            setResponses((prev) => {
-              const now = Date.now();
-              const totalDuration = now - startTimes.current.rest;
-              return {
+          onComplete: (source?: string) => {
+            if (source) {
+              const key = source === 'WebSocket' || source === 'SSE' ? source : 'rest';
+              completionStatus[key] = true;
+
+              setResponses((prev) => ({
                 ...prev,
-                rest: {
-                  ...prev.rest,
-                  firstChunkLatency: totalDuration,
-                  totalDuration,
-                  chunkCount: 1,
-                  avgChunkLatency: totalDuration,
-                  totalTokens: Math.round(
-                    prev.rest.text.split(/\s+/).length * 1.3
-                  ),
+                [key]: {
+                  ...prev[key],
+                  isComplete: true,
                 },
-              };
-            });
-            setLoading(false);
-            if (inputRef.current) {
-              inputRef.current.focus();
+              }));
+            }
+
+            // Only set loading to false when all clients have completed
+            if (Object.values(completionStatus).every((status) => status)) {
+              setLoading(false);
+              if (inputRef.current) {
+                inputRef.current.focus();
+              }
             }
           },
         }
       );
+
+      // Update final responses with metrics
+      results.forEach((result) => {
+        if (result) {
+          const key = result.source;
+
+          setResponses((prev) => ({
+            ...prev,
+            [key]: {
+              text: result.text,
+              metrics: result.metrics,
+              isComplete: true,
+            },
+          }));
+        }
+      });
     } catch (error) {
       setError((error as Error).message);
       setLoading(false);
@@ -210,46 +277,52 @@ export function GenAIChat() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 py-8">
-      <div className="container mx-auto px-4 max-w-7xl">
-        <div className="text-center mb-8">
+    <div className="h-screen flex flex-col bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="container mx-auto px-4 max-w-7xl flex-1 flex flex-col overflow-hidden">
+        <div className="text-center my-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            GenAI Comparison
+            AWS Lambda GenAI Response Strategies
           </h1>
-          <p className="text-gray-600">
-            Compare different streaming implementations in real-time
+          <p className="text-gray-600 text-sm">
+            Explore different patterns for Large Language Model responses: Real-time streaming with WebSocket & SSE, or single-response with REST
+          </p>
+          <p className="text-gray-500 text-xs mt-1">
+            Compare how each strategy handles AI text generation in terms of latency, token delivery, and overall response time
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {Object.entries(responses).map(([source, metrics]) => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0">
+          {Object.entries(responses).map(([source, response]) => (
             <div
               key={source}
-              className="bg-white rounded-xl shadow-md overflow-hidden"
+              className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden border border-blue-100/50 transition-transform duration-300 hover:shadow-xl"
             >
               {/* Header */}
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white capitalize">
+              <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-4 py-2 flex items-center justify-between shadow-sm">
+                <h3 className="text-base font-semibold text-white capitalize">
                   {source}
                 </h3>
                 {loading && (
                   <div className="flex items-center text-blue-100 text-sm">
-                    <div className="w-2 h-2 bg-blue-200 rounded-full mr-2 animate-pulse"></div>
+                    <div className="w-2 h-2 bg-blue-200 rounded-full mr-2 animate-ping"></div>
                     Generating...
                   </div>
                 )}
               </div>
 
               {/* Content */}
-              <div className="p-4">
-                <MetricsDisplay metrics={metrics} />
+              <div className="p-2 flex flex-col h-full">
+                <MetricsDisplay
+                  metrics={response.metrics}
+                  allMetrics={responses}
+                  source={source}
+                />
 
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-white pointer-events-none hidden"></div>
-                  <div className="h-[400px] overflow-y-auto rounded-lg border border-gray-200">
-                    <div className="bg-gray-50 p-4 font-mono text-sm text-gray-800 whitespace-pre-wrap">
-                      {metrics.text || (
-                        <span className="text-gray-400 italic">
+                <div className="flex-1 min-h-0">
+                  <div className="h-full overflow-y-auto rounded-lg border border-blue-100/50 bg-white/50">
+                    <div className="p-4 font-mono text-sm text-gray-800 whitespace-pre-wrap">
+                      {response.text || (
+                        <span className="text-gray-400 italic animate-pulse">
                           Waiting for input...
                         </span>
                       )}
@@ -262,7 +335,7 @@ export function GenAIChat() {
         </div>
 
         {/* Input Section */}
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto w-full py-4">
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center">
               <svg
@@ -282,7 +355,7 @@ export function GenAIChat() {
 
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-xl shadow-md p-4"
+            className="bg-white rounded-xl shadow-md p-3"
           >
             <textarea
               ref={inputRef}
@@ -290,7 +363,7 @@ export function GenAIChat() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter your prompt here... (Press Enter to send, Shift+Enter for new line)"
-              className="w-full p-3 border rounded-lg resize-none h-32 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full p-2 border rounded-lg resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
               disabled={loading}
             />
             <div className="flex justify-between items-center mt-3">
@@ -314,7 +387,7 @@ export function GenAIChat() {
                 disabled={loading || !input.trim()}
                 className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 
                          disabled:bg-gray-300 disabled:cursor-not-allowed 
-                         transition-colors duration-200 flex items-center"
+                         transition-colors duration-200 flex items-center text-sm"
               >
                 {loading ? (
                   <>
