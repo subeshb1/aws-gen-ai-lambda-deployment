@@ -25,7 +25,7 @@ export class StreamSseStack extends cdk.Stack {
     // Create Lambda function for SSE handler
     const sseHandler = new nodejs.NodejsFunction(this, 'SSEHandler', {
       runtime: lambda.Runtime.NODEJS_LATEST,
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(120),
       architecture: lambda.Architecture.ARM_64,
       entry: path.join(__dirname, '../src/handlers/sse.ts'),
       handler: 'handler',

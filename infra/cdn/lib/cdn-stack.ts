@@ -125,6 +125,7 @@ export class CdnStack extends cdk.Stack {
       enabled: true,
       comment: 'GenAI Application Distribution',
       defaultRootObject: 'index.html',
+
     });
 
     // Store CloudFront domain in SSM

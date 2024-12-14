@@ -38,7 +38,7 @@ export class RealtimeWsStack extends cdk.Stack {
         OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'dummy-key',
         NODE_OPTIONS: '--enable-source-maps',
       },
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(120),
       logRetention: logs.RetentionDays.ONE_WEEK,
       bundling: {
         minify: true,
@@ -181,7 +181,7 @@ export class RealtimeWsStack extends cdk.Stack {
     });
 
     // Store WebSocket endpoint in SSM
-    const wsEndpoint = `${webSocketApi.ref}.execute-api.${this.region}.amazonaws.com/${stage.stageName}`;
+    const wsEndpoint = `${webSocketApi.ref}.execute-api.${this.region}.amazonaws.com`;
     new ssm.StringParameter(this, 'WebSocketEndpoint', {
       parameterName: '/genai/websocket/endpoint',
       stringValue: wsEndpoint,
