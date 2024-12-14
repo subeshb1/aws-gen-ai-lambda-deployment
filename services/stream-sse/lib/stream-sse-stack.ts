@@ -87,6 +87,14 @@ export class StreamSseStack extends cdk.Stack {
       tier: ssm.ParameterTier.STANDARD,
     });
 
+    // Store Lambda function ARN in SSM
+    new ssm.StringParameter(this, 'SSELambdaArn', {
+      parameterName: '/genai/sse/lambda-arn',
+      stringValue: sseHandler.functionArn,
+      description: 'SSE Lambda Function ARN',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
     // Output both domain and full URL
     new cdk.CfnOutput(this, 'SSEDomain', {
       value: functionUrl.url.replace('https://', ''),

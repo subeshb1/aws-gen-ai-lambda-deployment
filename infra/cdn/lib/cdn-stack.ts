@@ -36,6 +36,11 @@ export class CdnStack extends cdk.Stack {
       '/genai/sse/endpoint'
     );
 
+    const sseLambdaArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/genai/sse/lambda-arn'
+    );
+
     const restApiEndpoint = ssm.StringParameter.valueForStringParameter(
       this,
       '/genai/rest/endpoint'
@@ -96,7 +101,7 @@ export class CdnStack extends cdk.Stack {
           origin: origins.FunctionUrlOrigin.withOriginAccessControl({
             url: sseEndpoint,
             authType: lambda.FunctionUrlAuthType.AWS_IAM,
-            functionArn: `***REMOVED***`,
+            functionArn: sseLambdaArn,
           } as any),
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
