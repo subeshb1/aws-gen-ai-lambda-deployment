@@ -12,7 +12,7 @@ declare const awslambda: {
 };
 
 // Initialize GenAI service
-const genAIService = getGenAIService(process.env.OPENAI_API_KEY || '');
+const genAIService = getGenAIService();
 
 // Create a readable stream from async generator
 function createReadableFromGenerator(generator: AsyncGenerator<string>) {
@@ -63,18 +63,15 @@ export const handler = awslambda.streamifyResponse(
     );
 
     try {
+      // Get prompt from query parameters
+      const prompt = event.queryStringParameters?.prompt;
 
-      // Parse request body
-      const request: SSERequest = event.body
-        ? JSON.parse(event.body)
-        : { prompt: 'hi' };
-
-      if (!request.prompt) {
+      if (!prompt) {
         throw new Error('Prompt is required');
       }
 
       // Create readable stream from generator
-      const generator = genAIService.streamResponse(request);
+      const generator = genAIService.streamResponse({ prompt });
       const readableStream = createReadableFromGenerator(generator);
 
       // Add completion message at the end

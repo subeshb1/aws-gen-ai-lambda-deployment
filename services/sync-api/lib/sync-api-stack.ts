@@ -6,6 +6,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export interface SyncApiStackProps extends cdk.StackProps {
   owner?: string;
@@ -30,7 +31,6 @@ export class SyncApiStack extends cdk.Stack {
       entry: path.join(__dirname, '../src/handlers/api.ts'),
       handler: 'handler',
       environment: {
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'dummy-key',
         NODE_OPTIONS: '--enable-source-maps',
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
@@ -49,6 +49,18 @@ export class SyncApiStack extends cdk.Stack {
         externalModules: ['aws-sdk'],
       },
     });
+
+    // Add Bedrock permissions
+    apiHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:InvokeModel',
+          'bedrock:InvokeModelWithResponseStream'
+        ],
+        resources: ['*']
+      })
+    );
 
     // Create API Gateway
     const api = new apigateway.RestApi(this, 'GenAIApi', {

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-apigatewaymanagementapi": "^3.474.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.712.0",
     "aws-cdk-lib": "2.114.1",
     "aws-lambda": "^1.0.7",
     "constructs": "^10.0.0",

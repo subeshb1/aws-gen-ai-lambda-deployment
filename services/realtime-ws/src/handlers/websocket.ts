@@ -12,7 +12,7 @@ import {
 } from '@aws-sdk/client-apigatewaymanagementapi';
 
 // Initialize GenAI service
-const genAIService = getGenAIService(process.env.OPENAI_API_KEY || '');
+const genAIService = getGenAIService();
 
 // Helper function to send response back to the client
 const sendResponse = async (

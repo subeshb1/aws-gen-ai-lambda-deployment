@@ -35,7 +35,6 @@ export class RealtimeWsStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_LATEST,
       architecture: lambda.Architecture.ARM_64,
       environment: {
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'dummy-key',
         NODE_OPTIONS: '--enable-source-maps',
       },
       timeout: cdk.Duration.seconds(120),
@@ -73,6 +72,18 @@ export class RealtimeWsStack extends cdk.Stack {
         resources: [
           `arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.ref}/*`,
         ],
+      })
+    );
+
+    // Add Bedrock permissions
+    lambdaRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:InvokeModel',
+          'bedrock:InvokeModelWithResponseStream'
+        ],
+        resources: ['*']
       })
     );
 

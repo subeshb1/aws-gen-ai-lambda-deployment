@@ -9,7 +9,7 @@ import { getGenAIService } from '../../../shared/genai/service';
 import { GenAIError } from '../../../shared/genai/types';
 
 // Initialize GenAI service
-const genAIService = getGenAIService(process.env.OPENAI_API_KEY || '');
+const genAIService = getGenAIService();
 
 // CORS headers
 const headers = {
@@ -20,32 +20,6 @@ const headers = {
 };
 
 export const handler = async (event: APIEvent): Promise<APIResult> => {
-  // Handle OPTIONS request for CORS
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: '',
-    };
-  }
-
-  // Only allow POST method
-  if (event.httpMethod !== 'POST') {
-    const errorResponse: APIErrorResponse = {
-      error: {
-        message: 'Method not allowed',
-        code: 'METHOD_NOT_ALLOWED',
-        statusCode: 405,
-      },
-    };
-
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify(errorResponse),
-    };
-  }
-
   try {
     const startTime = Date.now();
 

@@ -1,7 +1,7 @@
 .PHONY: deploy-all deploy-services deploy-cdn deploy-frontend clean-all deploy-realtime-ws deploy-stream-sse deploy-sync-api
 
 # Default owner value if not set
-OWNER ?= subesh
+OWNER ?= your-name@your-company.com
 
 # Export for child processes
 export OWNER
