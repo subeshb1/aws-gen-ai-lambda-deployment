@@ -34,22 +34,22 @@ export class GenAIClient {
   ): Promise<APIResponse[]> {
     const results = await Promise.allSettled([
       this.wsClient.generate(request, {
-        onChunk: (text, metrics) =>
-          callbacks?.onChunk?.(`[WebSocket] ${text}`, metrics),
+        onChunk: (source, text, metrics) =>
+          callbacks?.onChunk?.(source, text, metrics),
         onError: callbacks?.onError,
         onComplete: () => callbacks?.onComplete?.('WebSocket'),
       }),
       this.sseClient.generate(request, {
-        onChunk: (text, metrics) =>
-          callbacks?.onChunk?.(`[SSE] ${text}`, metrics),
+        onChunk: (source, text, metrics) =>
+          callbacks?.onChunk?.(source, text, metrics),
         onError: callbacks?.onError,
         onComplete: () => callbacks?.onComplete?.('SSE'),
       }),
       this.restClient.generate(request, {
-        onChunk: (text, metrics) =>
-          callbacks?.onChunk?.(`[REST] ${text}`, metrics),
+        onChunk: (source, text, metrics) =>
+          callbacks?.onChunk?.(source, text, metrics),
         onError: callbacks?.onError,
-        onComplete: () => callbacks?.onComplete?.('REST'),
+        onComplete: () => callbacks?.onComplete?.('rest'),
       }),
     ]);
 

@@ -91,7 +91,7 @@ export class SSEClient {
 
           // Calculate and emit current metrics with each chunk
           const currentMetrics = this.calculateMetrics();
-          callbacks.onChunk?.(chunk.text, currentMetrics);
+          callbacks.onChunk?.('SSE', chunk.text, currentMetrics);
         } catch (error) {
           console.error('Error parsing SSE chunk:', error);
         }
@@ -105,7 +105,7 @@ export class SSEClient {
             metrics: this.calculateMetrics(),
           };
 
-          callbacks.onComplete?.();
+          callbacks.onComplete?.('SSE');
           resolve(response);
           this.eventSource?.close();
         } catch (error) {

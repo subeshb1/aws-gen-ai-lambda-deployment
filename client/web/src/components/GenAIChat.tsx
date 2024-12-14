@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GenAIClient, getEndpoints } from '../../../shared/api-clients';
-import { StreamMetrics } from '../../../shared/types/api';
+import {
+  StreamMetrics,
+  ResponseSource,
+  CompleteCallback,
+} from '../../../shared/types/api';
 
 interface ResponseState {
   text: string;
@@ -36,7 +40,9 @@ const MetricItem = ({
   <div
     className={`flex flex-col items-center px-2 py-1 rounded-lg relative min-w-[70px]
     ${isWinner ? 'bg-green-50 ring-1 ring-green-400' : 'bg-white'} 
-    ${isPlaceholder ? 'opacity-50' : ''} transition-all duration-200 hover:scale-105`}
+    ${
+      isPlaceholder ? 'opacity-50' : ''
+    } transition-all duration-200 hover:scale-105`}
   >
     {isWinner && !isPlaceholder && (
       <div className="absolute -top-1.5 -right-1.5 bg-green-400 text-white rounded-full p-0.5 w-4 h-4 flex items-center justify-center text-[10px] shadow-lg transform hover:scale-110 transition-transform">
@@ -136,9 +142,9 @@ const MetricsDisplay = ({
 
 export function GenAIChat() {
   const [input, setInput] = useState('');
-  const [responses, setResponses] = useState<{
-    [key: string]: ResponseState;
-  }>({
+  const [responses, setResponses] = useState<
+    Record<ResponseSource, ResponseState>
+  >({
     WebSocket: { text: '' },
     SSE: { text: '' },
     rest: { text: '' },
@@ -190,8 +196,7 @@ export function GenAIChat() {
     });
 
     try {
-      // Track completion status for each client
-      const completionStatus: Record<'WebSocket' | 'SSE' | 'rest', boolean> = {
+      const completionStatus: Record<ResponseSource, boolean> = {
         WebSocket: false,
         SSE: false,
         rest: false,
@@ -200,62 +205,51 @@ export function GenAIChat() {
       const results = await clientRef.current.generateAll(
         { prompt: input },
         {
-          onChunk: (text: string, metrics?: StreamMetrics) => {
-            const match = text.match(/^\[(.*?)\]\s(.*)$/);
-            if (match) {
-              const [, source, content] = match;
-              const key = source === 'WebSocket' || source === 'SSE' ? source : 'rest';
-
-              // Don't update metrics if the client has completed
-              if (!completionStatus[key]) {
-                setResponses((prev) => ({
-                  ...prev,
-                  [key]: {
-                    ...prev[key],
-                    text: prev[key].text + content,
-                    ...(metrics && { metrics }),
-                  },
-                }));
-              }
-            }
-          },
-          onError: (error: Error) => {
-            setError(error.message);
-            setLoading(false);
-          },
-          onComplete: (source?: string) => {
-            if (source) {
-              const key = source === 'WebSocket' || source === 'SSE' ? source : 'rest';
-              completionStatus[key] = true;
-
+          onChunk: (
+            source: ResponseSource,
+            text: string,
+            metrics?: StreamMetrics
+          ) => {
+            if (source in completionStatus && !completionStatus[source]) {
               setResponses((prev) => ({
                 ...prev,
-                [key]: {
-                  ...prev[key],
-                  isComplete: true,
+                [source]: {
+                  ...prev[source],
+                  text: prev[source].text + text,
+                  ...(metrics && { metrics }),
                 },
               }));
             }
+          },
+          onComplete: ((source: ResponseSource) => {
+            console.log({ source });
+            completionStatus[source] = true;
 
-            // Only set loading to false when all clients have completed
+            setResponses((prev) => ({
+              ...prev,
+              [source]: {
+                ...prev[source],
+                isComplete: true,
+              },
+            }));
+
             if (Object.values(completionStatus).every((status) => status)) {
               setLoading(false);
               if (inputRef.current) {
                 inputRef.current.focus();
               }
             }
-          },
+          }) satisfies CompleteCallback,
         }
       );
 
-      // Update final responses with metrics
+      // Only update final metrics for sources that haven't completed
       results.forEach((result) => {
-        if (result) {
-          const key = result.source;
-
+        const source = result.source as ResponseSource;
+        if (!completionStatus[source]) {
           setResponses((prev) => ({
             ...prev,
-            [key]: {
+            [source]: {
               text: result.text,
               metrics: result.metrics,
               isComplete: true,
@@ -284,10 +278,13 @@ export function GenAIChat() {
             AWS Lambda GenAI Response Strategies
           </h1>
           <p className="text-gray-600 text-sm">
-            Explore different patterns for Large Language Model responses: Real-time streaming with WebSocket & SSE, or single-response with REST
+            Explore different patterns for Large Language Model responses:
+            Real-time streaming with WebSocket & SSE, or single-response with
+            REST
           </p>
           <p className="text-gray-500 text-xs mt-1">
-            Compare how each strategy handles AI text generation in terms of latency, token delivery, and overall response time
+            Compare how each strategy handles AI text generation in terms of
+            latency, token delivery, and overall response time
           </p>
         </div>
 

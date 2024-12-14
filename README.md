@@ -1,56 +1,208 @@
 # AWS Serverless GenAI Deployment Strategies
 
-This repository demonstrates different deployment strategies for GenAI applications using AWS Serverless services.
+This project demonstrates different deployment strategies for integrating Large Language Models (LLMs) using AWS Serverless services. It showcases three distinct patterns for handling AI responses: WebSocket streaming, Server-Sent Events (SSE), and traditional REST APIs.
+
+## Architecture Overview
+
+```mermaid
+graph TB
+    Client[React Web Client]
+    CDN[CloudFront CDN]
+    S3[S3 Static Hosting]
+    WS[WebSocket API]
+    SSE[Lambda Function URL]
+    REST[REST API]
+    Bedrock[Amazon Bedrock]
+
+    Client --> CDN
+    CDN --> S3
+    CDN --> WS
+    CDN --> SSE
+    CDN --> REST
+
+    WS --> Lambda1[Lambda Handler]
+    SSE --> Lambda2[Lambda Handler]
+    REST --> Lambda3[Lambda Handler]
+
+    Lambda1 --> Bedrock
+    Lambda2 --> Bedrock
+    Lambda3 --> Bedrock
+
+    style Client fill:#f9f,stroke:#333
+    style CDN fill:#ff9,stroke:#333
+    style Bedrock fill:#9f9,stroke:#333
+```
 
 ## Project Structure
 
 ```
 .
-├── infra/                     # Shared infrastructure components
-│   └── cdn/                  # CloudFront and S3 static hosting setup
+├── infra/                     # Infrastructure components
+│   └── cdn/                  # CloudFront and S3 static hosting
 ├── services/                  # Backend services
-│   ├── realtime-ws/         # WebSocket-based streaming using API Gateway WebSocket
-│   ├── stream-sse/          # Server-Sent Events streaming using Lambda URLs
-│   └── sync-api/           # Synchronous REST API using API Gateway + Lambda
-├── client/                    # Frontend application
-│   ├── web/                 # React/TypeScript web application
-│   └── shared/              # Shared utilities and API clients
-└── examples/                  # Example implementations and demos
+│   ├── realtime-ws/         # WebSocket streaming implementation
+│   ├── stream-sse/          # Server-Sent Events streaming
+│   ├── sync-api/           # Synchronous REST API
+│   └── shared/             # Shared utilities and GenAI service
+└── client/                    # Frontend application
+    └── web/                 # React/TypeScript application
 ```
 
-## Deployment Strategies
+## Implementation Details
 
-### 1. Realtime WebSocket (realtime-ws)
-- Real-time bidirectional communication
-- Suitable for streaming responses and maintaining persistent connections
-- Uses API Gateway WebSocket APIs and Lambda
+### 1. Frontend (client/web)
 
-### 2. Server-Sent Events Stream (stream-sse)
+- React/TypeScript application with real-time streaming UI
+- Comparative metrics display for each strategy
+- Unified interface for all three deployment strategies
+
+### 2. Backend Services
+
+#### WebSocket Strategy (services/realtime-ws)
+
+- Bidirectional communication using API Gateway WebSocket APIs
+- Real-time streaming of AI responses
+- Connection management and error handling
+- Metrics tracking for latency and tokens
+
+#### SSE Strategy (services/stream-sse)
+
 - One-way server-to-client streaming
-- Uses Lambda Function URLs
-- Efficient for streaming AI responses
+- Lambda Function URLs for direct invocation
+- Efficient for long-running AI responses
+- Built-in retry mechanisms
 
-### 3. Synchronous API (sync-api)
+#### REST Strategy (services/sync-api)
+
 - Traditional request-response pattern
-- API Gateway + Lambda integration
-- Suitable for non-streaming AI interactions
+- API Gateway REST API integration
+- Suitable for shorter, non-streaming responses
 
-### 4. Infrastructure (infra/cdn)
-- CloudFront distribution as CDN
-- S3 bucket for hosting frontend assets
-- Optimized content delivery and caching
+### 3. Infrastructure (infra/cdn)
 
-## Frontend (client/web)
-- Modern web application
-- Demonstrates integration with all deployment strategies
-- Clean and intuitive UI/UX for GenAI interactions
+- CloudFront distribution for content delivery
+- S3 bucket for static asset hosting
+- Route handling for all three strategies
+- SSM Parameter Store for configuration
 
-## Prerequisites
+### 4. Shared Components (services/shared)
+
+- Unified GenAI service implementation
+- Amazon Bedrock integration
+- Common types and utilities
+- Error handling patterns
+
+## Deployment Process
+
+### Prerequisites
+
 - AWS Account and configured AWS CLI
-- Node.js (>= 14.x) and npm/yarn
-- AWS SDK v3
+- Node.js (>= 16.x)
 - AWS CDK v2 (`npm install -g aws-cdk`)
-- TypeScript (`npm install -g typescript`)
+- Make utility
 
-## Infrastructure
-Each service uses AWS CDK for infrastructure provisioning. The `cdk.json` file in each service directory contains the context and configuration for the respective stacks.
+### Bootstrap (First Time Only)
+
+```bash
+# Bootstrap CDK in your AWS account/region (run once)
+make bootstrap
+```
+
+### Deployment Options
+
+#### 1. Deploy Everything
+
+```bash
+# Deploy all components (services, CDN, and frontend)
+make deploy-all OWNER=your-name@company.com
+```
+
+#### 2. Deploy Individual Components
+
+Deploy Backend Services:
+
+```bash
+# Deploy all backend services in parallel
+make deploy-services OWNER=your-name@company.com
+
+# Or deploy services individually:
+make deploy-realtime-ws OWNER=your-name@company.com
+make deploy-stream-sse OWNER=your-name@company.com
+make deploy-sync-api OWNER=your-name@company.com
+```
+
+Deploy Infrastructure:
+
+```bash
+# Deploy CDN and S3 infrastructure
+make deploy-cdn OWNER=your-name@company.com
+```
+
+Deploy Frontend:
+
+```bash
+# Deploy frontend application
+make deploy-frontend
+```
+
+### Clean Up
+
+```bash
+# Clean all deployed resources
+make clean-all
+```
+
+## Key Features
+
+1. **Real-time Streaming**
+
+   - Immediate response initiation
+   - Token-by-token streaming
+   - Progress tracking
+   - Connection management
+
+2. **Performance Metrics**
+   - First chunk latency
+   - Total response time
+   - Token generation speed
+   - Comparative analysis
+
+## Cost Considerations
+
+- Pay-per-request Lambda pricing
+- API Gateway WebSocket connection minutes
+- CloudFront data transfer
+- S3 storage and requests
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+3. Commit your changes
+   ```bash
+   git commit -m 'Add some amazing feature'
+   ```
+4. Push to the branch
+   ```bash
+   git push origin feature/amazing-feature
+   ```
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Deployment Strategy Comparison
+
+| Metric                    | WebSocket 🔌 | SSE 📡 | REST 🌐 |
+| ------------------------- | ------------ | ------ | ------- |
+| First Chunk Speed         | ⭐⭐⭐       | ⭐⭐   | ⭐      |
+| Average Latency           | ⭐⭐         | ⭐⭐⭐ | ⭐      |
+| Total Response Time       | ⭐           | ⭐⭐⭐ | ⭐⭐⭐  |
+| Timeout Handling          | ⭐⭐⭐       | ⭐⭐⭐ | ⭐      |
+| AWS Integration           | ⭐⭐⭐       | ⭐     | ⭐⭐⭐  |
+| Implementation Complexity | ⭐           | ⭐⭐   | ⭐⭐⭐  |
+| AWS Service Support       | ⭐⭐         | ⭐     | ⭐⭐⭐  |

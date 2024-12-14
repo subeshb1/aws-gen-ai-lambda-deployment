@@ -83,7 +83,7 @@ export class WebSocketClient {
               this.accumulatedText += chunkText;
               // Calculate and emit current metrics with each chunk
               const currentMetrics = this.calculateMetrics();
-              this.callbacks.onChunk?.(chunkText, currentMetrics);
+              this.callbacks.onChunk?.('WebSocket', chunkText, currentMetrics);
               break;
 
             case 'success':

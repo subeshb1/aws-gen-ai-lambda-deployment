@@ -1,3 +1,5 @@
+export type ResponseSource = 'WebSocket' | 'SSE' | 'rest';
+
 export interface GenAIRequest {
   prompt: string;
 }
@@ -10,9 +12,13 @@ export interface StreamMetrics {
   totalTokens: number;
 }
 
-export type StreamCallback = (text: string, metrics?: StreamMetrics) => void;
+export type StreamCallback = (
+  source: ResponseSource,
+  text: string,
+  metrics?: StreamMetrics
+) => void;
 export type ErrorCallback = (error: Error) => void;
-export type CompleteCallback = (source?: string) => void;
+export type CompleteCallback = (source: ResponseSource) => void;
 
 export interface StreamCallbacks {
   onChunk?: StreamCallback;
@@ -31,4 +37,4 @@ export interface APIEndpoints {
   sse: string;
   rest: string;
   cloudfront: string;
-} 
+}
