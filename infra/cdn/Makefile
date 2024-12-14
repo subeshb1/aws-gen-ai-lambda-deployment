@@ -13,3 +13,6 @@ clean:
 	rm -rf node_modules
 	rm -rf cdk.out
 	rm -rf dist 
+
+destroy:
+	cdk destroy --force --context owner=$(OWNER)

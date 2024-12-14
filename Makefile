@@ -1,4 +1,4 @@
-.PHONY: deploy-all deploy-services deploy-cdn deploy-frontend clean-all deploy-realtime-ws deploy-stream-sse deploy-sync-api
+.PHONY: deploy-all deploy-services deploy-cdn deploy-frontend clean-all deploy-realtime-ws deploy-stream-sse deploy-sync-api destroy-all destroy-realtime-ws destroy-stream-sse destroy-sync-api destroy-cdn
 
 # Default owner value if not set
 OWNER ?= your-name@your-company.com
@@ -57,6 +57,37 @@ clean-all:
 bootstrap:
 	cdk bootstrap
 
+# Destroy all components in the reverse order of deployment
+destroy-all: destroy-cdn destroy-services
+
+# Individual service destroy commands
+destroy-realtime-ws:
+	@echo "Destroying WebSocket service stack..."
+	@$(MAKE) -C services/realtime-ws destroy
+
+destroy-stream-sse:
+	@echo "Destroying SSE service stack..."
+	@$(MAKE) -C services/stream-sse destroy
+
+destroy-sync-api:
+	@echo "Destroying REST API service stack..."
+	@$(MAKE) -C services/sync-api destroy
+
+# Destroy all backend services in parallel
+destroy-services:
+	@echo "Destroying all backend services in parallel..."
+	@$(MAKE) destroy-realtime-ws & \
+	$(MAKE) destroy-stream-sse & \
+	$(MAKE) destroy-sync-api & \
+	wait
+	@echo "All backend services destroyed successfully!"
+
+# Destroy CDN
+destroy-cdn:
+	@echo "Destroying CDN infrastructure..."
+	@$(MAKE) -C infra/cdn destroy
+	@echo "CDN destroyed successfully!"
+
 # Help target
 help:
 	@echo "Available targets:"
@@ -66,12 +97,16 @@ help:
 	@echo "  deploy-frontend- Deploy frontend application"
 	@echo "  clean-all      - Clean all projects"
 	@echo "  bootstrap      - Bootstrap CDK (run once per account/region)"
+	@echo "  destroy-all    - Destroy all components (frontend, then CDN, then services)"
 	@echo "  help          - Show this help message"
 	@echo ""
 	@echo "Individual service targets:"
 	@echo "  deploy-realtime-ws - Deploy WebSocket service"
 	@echo "  deploy-stream-sse  - Deploy SSE service"
 	@echo "  deploy-sync-api    - Deploy REST API service"
+	@echo "  destroy-realtime-ws- Destroy WebSocket service"
+	@echo "  destroy-stream-sse - Destroy SSE service"
+	@echo "  destroy-sync-api   - Destroy REST API service"
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  OWNER         - Set the owner tag (default: $(OWNER))"
