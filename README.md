@@ -2,36 +2,11 @@
 
 This project demonstrates different deployment strategies for integrating Large Language Models (LLMs) using AWS Serverless services. It showcases three distinct patterns for handling AI responses: WebSocket streaming, Server-Sent Events (SSE), and traditional REST APIs.
 
+https://github.com/user-attachments/assets/db7b01f1-bda5-4dd7-ae82-f5c5ce006549
+
 ## Architecture Overview
 
-```mermaid
-graph TB
-    Client[React Web Client]
-    CDN[CloudFront CDN]
-    S3[S3 Static Hosting]
-    WS[WebSocket API]
-    SSE[Lambda Function URL]
-    REST[REST API]
-    Bedrock[Amazon Bedrock]
-
-    Client --> CDN
-    CDN --> S3
-    CDN --> WS
-    CDN --> SSE
-    CDN --> REST
-
-    WS --> Lambda1[Lambda Handler]
-    SSE --> Lambda2[Lambda Handler]
-    REST --> Lambda3[Lambda Handler]
-
-    Lambda1 --> Bedrock
-    Lambda2 --> Bedrock
-    Lambda3 --> Bedrock
-
-    style Client fill:#f9f,stroke:#333
-    style CDN fill:#ff9,stroke:#333
-    style Bedrock fill:#9f9,stroke:#333
-```
+![Architecture Overview](./docs/architecture.png)
 
 ## Project Structure
 
@@ -206,3 +181,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 | AWS Integration           | ⭐⭐⭐       | ⭐     | ⭐⭐⭐  |
 | Implementation Complexity | ⭐           | ⭐⭐   | ⭐⭐⭐  |
 | AWS Service Support       | ⭐⭐         | ⭐     | ⭐⭐⭐  |
+
+
